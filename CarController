@@ -31,7 +31,7 @@ public class CarController : MonoBehaviour
     private GameObject centerOfMass;
     private float KPH;
     private float MPH;
-    
+    private float breakPower = 0;
     //script starts and initializes all variables
     private void awake()
     {
@@ -43,34 +43,12 @@ public class CarController : MonoBehaviour
     {
         vertical = im.throttle;
         horizontal = im.steer;
-        //all wheel drive
-        if(drive == DriveType.AllWheelDrive)
-        {
-            for(int i = 0; i < wheels.Length; i++)
-            {
-                wheels[i].motorTorque = horsepower/4 * Time.deltaTime * vertical;
-            }
-        }
-        //rear wheel drive
-        else if(drive == DriveType.RearWheelDrive)
-        {
-            //back left wheel
-            wheels[2].motorTorque = horsepower/2 * Time.deltaTime * vertical;
-            //back right wheel
-            wheels[3].motorTorque = horsepower/2 * Time.deltaTime * vertical;
-        }
-        //front wheel drive
-        else
-        {
-            //front left
-            wheels[0].motorTorque = horsepower/2 * Time.deltaTime * im.throttle;
-            //front right
-            wheels[1].motorTorque = horsepower/2 * Time.deltaTime * im.throttle;
-        }
         KPH = rigidbody.velocity.magnitude * 3.6f;
         MPH = KPH * 0.62f;
         Debug.Log("KPH " + KPH);
         Debug.Log("MPH " + MPH);
+        driveCar();
+        breakCar();
         steer();
     }
     private void getObjects()
@@ -95,18 +73,89 @@ public class CarController : MonoBehaviour
         //steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2))) * horizontalInput;
         if(horizontal > 0)
         {
+            //outer wheel
             wheels[0].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2)) * horizontal);
+            //inner wheel
             wheels[1].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius - (1.5f / 2)) * horizontal);
         }
         else if(horizontal < 0)
         {
+            //outer wheel
             wheels[1].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2)) * horizontal);
+            //inner wheel
             wheels[0].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius - (1.5f / 2)) * horizontal);
         }
         else
         {
             wheels[0].steerAngle = 0;
             wheels[0].steerAngle = 0;
+        }
+    }
+    private void brake()
+    {
+        if(vertical < 0)
+        {
+            breakPower = (MPH <= 10) ? 500 : 0;
+        }
+        else if(vertical == 0 && (MPH < 5 || MPH > -5)) {
+            breakPower = 150;
+        }
+        else
+        {
+            breakPower = 0;
+        }
+    }
+    private void breakCar()
+    {
+        //all wheel drive
+        if (drive == DriveType.AllWheelDrive)
+        {
+            for (int i = 0; i < wheels.Length; i++)
+            {
+                wheels[i].brakeTorque = breakPower;
+            }
+        }
+        //rear wheel drive
+        else if (drive == DriveType.RearWheelDrive)
+        {
+            //back left wheel
+            wheels[2].brakeTorque = breakPower;
+            //back right wheel
+            wheels[3].brakeTorque = breakPower;
+        }
+        //front wheel drive
+        else
+        {
+            //front left
+            wheels[0].brakeTorque = breakPower;
+            //front right
+            wheels[1].brakeTorque = breakPower;
+        }
+    }
+    private void driveCar()
+    {
+        if (drive == DriveType.AllWheelDrive)
+        {
+            for (int i = 0; i < wheels.Length; i++)
+            {
+                wheels[i].motorTorque = horsepower / 4 * Time.deltaTime * vertical;
+            }
+        }
+        //rear wheel drive
+        else if (drive == DriveType.RearWheelDrive)
+        {
+            //back left wheel
+            wheels[2].motorTorque = horsepower / 2 * Time.deltaTime * vertical;
+            //back right wheel
+            wheels[3].motorTorque = horsepower / 2 * Time.deltaTime * vertical;
+        }
+        //front wheel drive
+        else
+        {
+            //front left
+            wheels[0].motorTorque = horsepower / 2 * Time.deltaTime * im.throttle;
+            //front right
+            wheels[1].motorTorque = horsepower / 2 * Time.deltaTime * im.throttle;
         }
     }
 }
