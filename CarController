@@ -19,6 +19,20 @@ public class CarController : MonoBehaviour
     private float horizontal;
     public float radius;
 
+    //gears
+    static public int gearLength;
+    public float[] gears = new float[gearLength];
+    public float[] gearRPMChange = new float[gearLength];
+    public int gearNum = 0;
+
+    //Engine RPM and Engine Power
+    public AnimationCurve enginePower;
+    public float minRPM;
+    public float maxRPM;
+    public float engineRPM;
+    public float totalPower;
+
+
     [HideInInspector] public bool reverse;
 
     private GameObject wheelColliders;
@@ -32,23 +46,32 @@ public class CarController : MonoBehaviour
     private float KPH;
     private float MPH;
     private float breakPower = 0;
+    private float wheelRPM = 0;
+   
     //script starts and initializes all variables
     private void awake()
     {
         getObjects();
+        setLerp(maxRPM);
     }
 
     //fixedupdate works better with physics
     private void Update()
     {
+        calculateRPM();
+        checkGear();
+        wheelsRPM();
         vertical = im.throttle;
         horizontal = im.steer;
         KPH = rigidbody.velocity.magnitude * 3.6f;
         MPH = KPH * 0.62f;
         Debug.Log("KPH " + KPH);
         Debug.Log("MPH " + MPH);
+        Debug.Log("RPM " + wheelRPM);
+        Debug.Log("im.throttle " + im.throttle);
+        Debug.Log("gearNum " + gearNum);
         driveCar();
-        breakCar();
+        brakeCar();
         steer();
     }
     private void getObjects()
@@ -91,11 +114,22 @@ public class CarController : MonoBehaviour
             wheels[0].steerAngle = 0;
         }
     }
+    private void wheelsRPM()
+    {
+        float total = 0f;
+        int r = 0;
+        for(int i = 0; i < 4; i++)
+        {
+            total += wheels[i].rpm;
+            r++;
+        }
+        wheelRPM = total / r;
+    }
     private void brake()
     {
         if(vertical < 0)
         {
-            breakPower = (MPH <= 10) ? 500 : 0;
+            breakPower = (MPH >= 10 || MPH <= -10) ? 1000: 0;
         }
         else if(vertical == 0 && (MPH < 5 || MPH > -5)) {
             breakPower = 150;
@@ -105,31 +139,34 @@ public class CarController : MonoBehaviour
             breakPower = 0;
         }
     }
-    private void breakCar()
+    private void brakeCar()
     {
-        //all wheel drive
-        if (drive == DriveType.AllWheelDrive)
+        if(vertical < 0)
         {
-            for (int i = 0; i < wheels.Length; i++)
+            //all wheel drive
+            if (drive == DriveType.AllWheelDrive)
             {
-                wheels[i].brakeTorque = breakPower;
+                for (int i = 0; i < wheels.Length; i++)
+                {
+                    wheels[i].brakeTorque = breakPower;
+                }
             }
-        }
-        //rear wheel drive
-        else if (drive == DriveType.RearWheelDrive)
-        {
-            //back left wheel
-            wheels[2].brakeTorque = breakPower;
-            //back right wheel
-            wheels[3].brakeTorque = breakPower;
-        }
-        //front wheel drive
-        else
-        {
-            //front left
-            wheels[0].brakeTorque = breakPower;
-            //front right
-            wheels[1].brakeTorque = breakPower;
+            //rear wheel drive
+            else if (drive == DriveType.RearWheelDrive)
+            {
+                //back left wheel
+                wheels[2].brakeTorque = breakPower;
+                //back right wheel
+                wheels[3].brakeTorque = breakPower;
+            }
+            //front wheel drive
+            else
+            {
+                //front left
+                wheels[0].brakeTorque = breakPower;
+                //front right
+                wheels[1].brakeTorque = breakPower;
+            }
         }
     }
     private void driveCar()
@@ -138,24 +175,71 @@ public class CarController : MonoBehaviour
         {
             for (int i = 0; i < wheels.Length; i++)
             {
-                wheels[i].motorTorque = horsepower / 4 * Time.deltaTime * vertical;
+                wheels[i].motorTorque = totalPower / 4 * Time.deltaTime * vertical * gears[gearNum];
             }
         }
         //rear wheel drive
         else if (drive == DriveType.RearWheelDrive)
         {
             //back left wheel
-            wheels[2].motorTorque = horsepower / 2 * Time.deltaTime * vertical;
+            wheels[2].motorTorque = totalPower / 2 * Time.deltaTime * vertical * gears[gearNum];
             //back right wheel
-            wheels[3].motorTorque = horsepower / 2 * Time.deltaTime * vertical;
+            wheels[3].motorTorque = totalPower / 2 * Time.deltaTime * vertical * gears[gearNum];
         }
         //front wheel drive
         else
         {
             //front left
-            wheels[0].motorTorque = horsepower / 2 * Time.deltaTime * im.throttle;
+            wheels[0].motorTorque = totalPower * Time.deltaTime * im.throttle * gears[gearNum];
             //front right
-            wheels[1].motorTorque = horsepower / 2 * Time.deltaTime * im.throttle;
+            wheels[1].motorTorque = totalPower * Time.deltaTime * im.throttle * gears[gearNum];
         }
+    }
+    
+
+    //Should change gear when the RPM gets high enough
+    //currently does not work
+    private void checkGear()
+    {
+        if (engineRPM >= gearRPMChange[gearNum] && gearNum < gearLength)
+        {
+            gearNum++;
+        }
+        else if (gearNum != 0 && engineRPM < gearRPMChange[gearNum - 1])
+        {
+            gearNum--;
+        }
+    }
+    private void calculateRPM()
+    {
+        lerpEngine();
+        wheelsRPM();
+        if(engineRPM >= maxRPM)
+        {
+            setLerp(engineRPM - 1000);
+        }
+            engineRPM = Mathf.Lerp(engineRPM, maxRPM, vertical * smoothTime * Time.deltaTime);
+
+        if (vertical <= 0)
+        {
+            engineRPM = Mathf.Lerp(engineRPM, minRPM, smoothTime);
+        }
+        totalPower = enginePower.Evaluate(engineRPM);
+    }
+    public float smoothTime;
+    private bool engineLerp = false;
+    private float lerpValue;
+    private void setLerp(float num)
+    {
+        lerpValue = num;
+        engineLerp = true;
+    }
+    private void lerpEngine()
+    {
+        if(engineLerp)
+        {
+            engineRPM = Mathf.Lerp(engineRPM, lerpValue, 0.1f*Time.deltaTime);
+        }
+        engineLerp = engineRPM <= lerpValue + 100 ? false : true;
     }
 }
