@@ -11,10 +11,15 @@ public class CarController : MonoBehaviour
         RearWheelDrive,
         FrontWheelDrive
     }
+     internal enum DriveType
+    {
+        AllWheelDrive,
+        RearWheelDrive,
+        FrontWheelDrive
+    }
     [SerializeField]private DriveType drive;
+    [SerializeField] private Transmission trans;
     public InputController im;
-    public float horsepower;
-    public float handeling;
     private float vertical;
     private float horizontal;
     public float radius;
@@ -73,6 +78,17 @@ public class CarController : MonoBehaviour
         driveCar();
         brakeCar();
         steer();
+        if (trans == Transmission.manual)
+        {
+            if (Input.GetKeyDown("x") && gearNum < gearsLength - 1)
+            {
+                gearNum++;
+            }
+            else if (Input.GetKeyDown("z") && gearNum > 0)
+            {
+                gearNum--;
+            }
+        }
     }
     private void getObjects()
     {
@@ -201,30 +217,44 @@ public class CarController : MonoBehaviour
     //currently does not work
     private void checkGear()
     {
-        if (engineRPM >= gearRPMChange[gearNum] && gearNum < gearLength)
+        if(trans == Transmission.automatic)
         {
-            gearNum++;
-        }
-        else if (gearNum != 0 && engineRPM < gearRPMChange[gearNum - 1])
-        {
-            gearNum--;
+            if (engineRPM >= gearRPMChange[gearNum] && gearNum < gearsLength - 1)
+            {
+                gearNum++;
+            }
+            else if (gearNum != 0 && engineRPM < gearRPMChange[gearNum - 1])
+            {
+                gearNum--;
+            }
         }
     }
     private void calculateRPM()
     {
-        lerpEngine();
+         lerpEngine();
         wheelsRPM();
-        if(engineRPM >= maxRPM)
+        if (engineRPM >= maxRPM)
         {
             setLerp(engineRPM - 1000);
         }
-            engineRPM = Mathf.Lerp(engineRPM, maxRPM, vertical * smoothTime * Time.deltaTime);
-
-        if (vertical <= 0)
-        {
-            engineRPM = Mathf.Lerp(engineRPM, minRPM, smoothTime);
-        }
+        engineRPM = Mathf.Lerp(engineRPM, maxRPM, vertical * smoothTime * Time.deltaTime);
         totalPower = enginePower.Evaluate(engineRPM);
+    }
+    public float smoothTime;
+    private bool engineLerp = false;
+    private float lerpValue;
+    private void setLerp(float num)
+    {
+        lerpValue = num;
+        engineLerp = true;
+    }
+    private void lerpEngine()
+    {
+        if (engineLerp)
+        {
+            engineRPM = Mathf.Lerp(engineRPM, lerpValue, 0.1f * Time.deltaTime);
+        }
+        engineLerp = engineRPM <= lerpValue + 100 ? false : true;
     }
     public float smoothTime;
     private bool engineLerp = false;
