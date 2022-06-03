@@ -1,0 +1,259 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(InputManganger))]
+public class vehicleController : MonoBehaviour
+{
+    internal enum DriveType
+    {
+        AllWheelDrive,
+        RearWheelDrive,
+        FrontWheelDrive
+    }
+    internal enum Transmission
+    {
+        automatic,
+        manual
+    }
+    [SerializeField] private Transmission trans;
+    [SerializeField] private DriveType drive;
+    public InputManganger im;
+    private float vertical;
+    private float horizontal;
+    public float radius;
+    public float finalDrive;
+
+    //gears
+    public int gearsLength;
+    public float[] gears;
+    public float[] gearRPMChange;
+    public int gearNum = 0;
+
+    //Engine RPM and Engine Power
+    public AnimationCurve enginePower;
+    public float minRPM;
+    public float maxRPM;
+    public float engineRPM;
+    public float totalPower;
+
+
+    [HideInInspector] public bool reverse;
+
+    private GameObject wheelColliders;
+    private GameObject wheelMeshes;
+    // 0 = front left, 1 = front right, 2 = back left, 3 = back right
+    //only 4 wheel drive
+    public WheelCollider[] wheels = new WheelCollider[4];
+    private GameObject[] wheelMesh = new GameObject[4];
+    public Rigidbody rigidbody;
+    private GameObject centerOfMass;
+    private float KPH;
+    private float MPH;
+    private float breakPower = 0;
+    private float wheelRPM = 0;
+
+    //script starts and initializes all variables
+    private void awake()
+    {
+        getObjects();
+        setLerp(maxRPM);
+    }
+
+    //fixedupdate works better with physics
+    private void Update()
+    {
+        calculateRPM();
+        checkGear();
+        wheelsRPM();
+        vertical = im.throttle;
+        horizontal = im.steer;
+        KPH = rigidbody.velocity.magnitude * 3.6f;
+        MPH = KPH * 0.62f;
+        driveCar();
+        brakeCar();
+        steer();
+        if (trans == Transmission.manual)
+        {
+            if (Input.GetKeyDown("x") && gearNum < gearsLength - 1)
+            {
+                gearNum++;
+            }
+            else if (Input.GetKeyDown("z") && gearNum > 0)
+            {
+                gearNum--;
+            }
+        }
+    }
+    private void getObjects()
+    {
+        rigidbody = GetComponent<Rigidbody>();
+        im = GetComponent<InputManganger>();
+        wheelColliders = gameObject.transform.Find("wheelColliders").gameObject;
+        wheelMeshes = gameObject.transform.Find("wheelMeshes").gameObject;
+
+        wheelMesh[0] = wheelMeshes.transform.Find("0").gameObject;
+        wheelMesh[1] = wheelMeshes.transform.Find("1").gameObject;
+        wheelMesh[2] = wheelMeshes.transform.Find("2").gameObject;
+        wheelMesh[3] = wheelMeshes.transform.Find("3").gameObject;
+        centerOfMass = gameObject.transform.Find("mass").gameObject;
+        centerOfMass.transform.localPosition =  (new Vector3(0, -30, -1));
+    }
+    private void steer()
+    {
+        //ackerman outer wheel steering formula
+        //steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2))) * horizontalInput;
+        //ackerman inner wheel steering formula
+        //steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2))) * horizontalInput;
+        if (horizontal > 0)
+        {
+            //outer wheel
+            wheels[0].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2)) * horizontal);
+            //inner wheel
+            wheels[1].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius - (1.5f / 2)) * horizontal);
+        }
+        else if (horizontal < 0)
+        {
+            //outer wheel
+            wheels[1].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius + (1.5f / 2)) * horizontal);
+            //inner wheel
+            wheels[0].steerAngle = Mathf.Rad2Deg * Mathf.Atan(2.55f / (radius - (1.5f / 2)) * horizontal);
+        }
+        else
+        {
+            wheels[0].steerAngle = 0;
+            wheels[0].steerAngle = 0;
+        }
+    }
+    private void wheelsRPM()
+    {
+        float total = 0f;
+        int r = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            total += wheels[i].rpm;
+            r++;
+        }
+        wheelRPM = total / r;
+    }
+    private void brake()
+    {
+        if (vertical < 0)
+        {
+            breakPower = (MPH >= 10 || MPH <= -10) ? 1000 : 0;
+        }
+        else if (vertical == 0 && (MPH < 5 || MPH > -5))
+        {
+            breakPower = 150;
+        }
+        else
+        {
+            breakPower = 0;
+        }
+    }
+    private void brakeCar()
+    {
+        if (vertical < 0)
+        {
+            //all wheel drive
+            if (drive == DriveType.AllWheelDrive)
+            {
+                for (int i = 0; i < wheels.Length; i++)
+                {
+                    wheels[i].brakeTorque = breakPower;
+                }
+            }
+            //rear wheel drive
+            else if (drive == DriveType.RearWheelDrive)
+            {
+                //back left wheel
+                wheels[2].brakeTorque = breakPower;
+                //back right wheel
+                wheels[3].brakeTorque = breakPower;
+            }
+            //front wheel drive
+            else
+            {
+                //front left
+                wheels[0].brakeTorque = breakPower;
+                //front right
+                wheels[1].brakeTorque = breakPower;
+            }
+        }
+    }
+    private void driveCar()
+    {
+        if (drive == DriveType.AllWheelDrive)
+        {
+            for (int i = 0; i < wheels.Length; i++)
+            {
+                wheels[i].motorTorque = totalPower / 4 * vertical * gears[gearNum] * finalDrive;
+            }
+        }
+        //rear wheel drive
+        else if (drive == DriveType.RearWheelDrive)
+        {
+            //back left wheel
+            wheels[2].motorTorque = totalPower / 2 *  vertical * gears[gearNum] * finalDrive;
+            //back right wheel
+            wheels[3].motorTorque = totalPower / 2 *  vertical * gears[gearNum] * finalDrive;
+        }
+        //front wheel drive
+        else
+        {
+            //front left
+            wheels[0].motorTorque = totalPower *  vertical * gears[gearNum] * finalDrive;
+            //front right
+            wheels[1].motorTorque = totalPower * vertical * gears[gearNum] * finalDrive;
+        }
+    }
+
+
+
+    private void checkGear()
+    {
+        if(trans == Transmission.automatic)
+        {
+            if (engineRPM >= gearRPMChange[gearNum] && gearNum < gearsLength - 1)
+            {
+                gearNum++;
+            }
+            else if (gearNum != 0 && engineRPM < gearRPMChange[gearNum - 1])
+            {
+                gearNum--;
+            }
+        }
+    }
+    private void calculateRPM()
+    {
+        lerpEngine();
+        wheelsRPM();
+        if (engineRPM >= maxRPM)
+        {
+            setLerp(engineRPM - 1000);
+        }
+        engineRPM = Mathf.Lerp(engineRPM, maxRPM, vertical * smoothTime * Time.deltaTime);
+        totalPower = enginePower.Evaluate(engineRPM);
+    }
+    public float smoothTime;
+    private bool engineLerp = false;
+    private float lerpValue;
+    private void setLerp(float num)
+    {
+        lerpValue = num;
+        engineLerp = true;
+    }
+    private void lerpEngine()
+    {
+        if (engineLerp)
+        {
+            engineRPM = Mathf.Lerp(engineRPM, lerpValue, 0.1f * Time.deltaTime);
+        }
+        engineLerp = engineRPM <= lerpValue + 100 ? false : true;
+    }
+    public Rect display;
+    void OnGUI()
+    {
+        GUI.Label(display, MPH.ToString("F0"));
+    }
+}
